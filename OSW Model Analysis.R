@@ -23,18 +23,14 @@ graphs <- data %>%
   map(~ graph_from_data_frame(.x, directed = TRUE))
 
 
-
-
 #IF you want to align some terminology you can rename nodes here
+# you will also need to update the plot layout for the plot below (by removing any nodes that are no longer included)
+
 # #
 # node_corrections <- c(
-#   
-#  #  "Reduced Survival" = "Endpoints",
-#   
 #   "Temporary Habitat Loss" = "Effective Habitat Loss",
 #   "Direct Habitat Loss" = "Effective Habitat Loss",
-#   "Habitat Loss_[Effect]" = "Effective Habitat Loss",
-#   "Altered Energetic Cost" = "Altered Energy Cost"
+#   "Habitat Loss_[Effect]" = "Effective Habitat Loss"  
 #  )
 # 
 # graphs <- graphs %>%
@@ -51,11 +47,9 @@ graphs <- data %>%
 get_paths <- function(g, graph_name) {
   
   nodes <- V(g)$name
+    map_dfr(nodes, function(from) {
+      map_dfr(nodes[nodes != from], function(to) {
   
-  map_dfr(nodes, function(from) {
-    
-    map_dfr(nodes[nodes != from], function(to) {
-      
       paths <- all_simple_paths(
         g,
         from = from,
@@ -72,15 +66,12 @@ get_paths <- function(g, graph_name) {
         to = to,
         path = map_chr(paths, ~ paste(V(g)$name[.x], collapse = ", ")),
         graph = graph_name
-      )
-    })
-  })
-}
+      )  })  })
+    }
 
 
 #Get paths from the first 7 models (excluding accidents)
 all_paths <- imap_dfr(graphs[1:7], get_paths)
-
 
 #collapse to show similar paths across different models
 path_table <- all_paths %>%
@@ -97,19 +88,23 @@ filtered_paths = path_table %>% filter(
   to %in% c("Reduced Survival", "Reduced Reproductive Success"))%>%
   arrange(-n_graphs)
 
-#add column for sorting
+#add columns for sorting
 colnames(filtered_paths)[1]<-"Pressure"
-colnames(filtered_paths)[2]<-"Individual Endpoint"
+colnames(filtered_paths)[2]<-"Individual_Endpoint"
+colnames(filtered_paths)[4]<-"Project_Phase"
+colnames(filtered_paths)[5]<-"N_Project_Phases"
 
-filtered_paths = filtered_paths %>% mutate(path)
+#new columns for the effects
+filtered_paths = filtered_paths %>%
+  mutate(Effects = sub("^[^,]*,\\s*", "", path),
+         Effects = sub(",[^,]*$", "", Effects))
+
+filtered_paths = filtered_paths %>% select(Pressure, Effects, Individual_Endpoint, N_Project_Phases, Project_Phase)
+
+#write_excel_csv(filtered_paths, "OSW Pathways.csv")
 
 
-# write_excel_csv(filtered_paths, "OSW Pathways.csv")
-
-
-
-
-#######Overlay plot##########
+######Overlay plot_all paths##########
 
 #calculating how many models each edge is in
 edge_counts <- purrr::imap_dfr(
@@ -136,15 +131,14 @@ V(consensus_graph)$label <- str_wrap(
 )
 
 
-
 #Set the layout for the plot
 #Note that if you change any of the node labels (eg to align between similar nodes) you will need to update this structure
 node_rows <- list(
-  c("Artificial Lighting", "Artificial Structures", "Noise", "Habitat Loss", "Artificial Structures (Turbines and Substations)" ),
-   c("Collision Mortality", "Disorientation", "Altered Habitat Quality", "Change in Movement Paths", "Direct Habitat Loss", "Effective Habitat Loss",
-     "Habitat Loss_[Effect]", "Heightened Collision Risk", "Roosting/Perching Opportunities", "Starvation", "Temporary Habitat Loss"),
-  c("Heightened Stranding Risk", "Altered Energy Cost", "Altered Foraging Efficiency", "Altered Prey Abundance","Change in Habitat Connectivity",
-    "Lower Body Condition", "Masked Communication" ),
+  c("Artificial Lighting", "Artificial Structures", "Artificial Structures (Turbines and Substations)", "Noise", "Habitat Loss"),
+   c("Disorientation", "Heightened Collision Risk", "Roosting/Perching Opportunities", "Change in Movement Paths", "Altered Habitat Quality",  "Direct Habitat Loss", "Temporary Habitat Loss", "Effective Habitat Loss",
+     "Habitat Loss_[Effect]",   "Starvation"),
+  c("Collision Mortality", "Lower Body Condition", "Heightened Stranding Risk", "Altered Energy Cost", "Altered Foraging Efficiency", "Altered Prey Abundance",  "Masked Communication", "Change in Habitat Connectivity"
+     ),
   c("Reduced Survival", "Reduced Reproductive Success"),
   c("Reduced Population Abundance", "Changed Population Distribution")
 )
@@ -213,17 +207,15 @@ drop_nodes <- node_rows[[5]]
 
 consensus_graph <- delete_vertices(
   consensus_graph,
-  drop_nodes
-)
+  drop_nodes)
 
 node_rows <- node_rows[1:4]
 layout <- layout[V(consensus_graph)$name, , drop = FALSE]
 
 
-
 #making the plot
 #save as svg if want to import to powerpoint (and mural?)
-svg("consensus_network.svg", width = 12, height = 10)
+# svg("consensus_network.svg", width = 12, height = 10)
 
 plot(
   consensus_graph,
@@ -243,11 +235,81 @@ plot(
   vertex.label.color = "black"
 )
 
+# dev.off()
+
+###
 
 
- dev.off()
+#####Subgraphs based on pressure####
+
+# Pressures to make separate plots for
+pressures <- c(
+  "Artificial Lighting",
+  "Artificial Structures",
+  "Noise",
+  "Habitat Loss",
+  "Artificial Structures (Turbines and Substations)"
+)
 
 
+# Create one plot for each pressure
+for (pressure in pressures) {
+  
+  # Find all nodes downstream of the pressure
+  downstream <- subcomponent(
+    consensus_graph,
+    v = which(V(consensus_graph)$name == pressure),
+    mode = "out"
+  )
+  
+  # Keep only the downstream nodes
+  subgraph <- induced_subgraph(
+    consensus_graph,
+    vids = downstream
+  )
+  
+  # Get the layout for these nodes
+  sub_layout <- layout[V(subgraph)$name, , drop = FALSE]
+  
+  # Make sure node properties are retained
+  V(subgraph)$shape <- V(consensus_graph)$shape[
+    match(V(subgraph)$name, V(consensus_graph)$name)
+  ]
+  
+  V(subgraph)$color <- V(consensus_graph)$color[
+    match(V(subgraph)$name, V(consensus_graph)$name)
+  ]
+  
+  # Plot filename
+  filename <- paste0(
+    gsub("[^A-Za-z0-9]+", "_", pressure),
+    ".svg"
+  )
+  
+  # Save as SVG
+  svg(filename, width = 12, height = 10)
+  
+  plot(
+    subgraph,
+    layout = sub_layout,
+    
+    edge.color = E(subgraph)$color,
+    edge.width = 0.7,
+    edge.arrow.size = 0.2,
+    edge.curved = 0.1,
+    
+    vertex.shape = V(subgraph)$shape,
+    vertex.color = V(subgraph)$color,
+    
+    vertex.size = 17,
+    vertex.size2 = 10,
+    
+    vertex.label.cex = 0.5,
+    vertex.label.color = "black"
+  )
+  
+  dev.off()
+}
 ####
 
 

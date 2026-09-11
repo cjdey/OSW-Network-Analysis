@@ -25,7 +25,7 @@ graphs <- data %>%
 
 
 
-#IF you want to align some terminolgogy you can rename nodes here
+#IF you want to align some terminology you can rename nodes here
 # #
 # node_corrections <- c(
 #   
@@ -35,8 +35,7 @@ graphs <- data %>%
 #   "Direct Habitat Loss" = "Effective Habitat Loss",
 #   "Habitat Loss_[Effect]" = "Effective Habitat Loss",
 #   "Altered Energetic Cost" = "Altered Energy Cost"
-# 
-# )
+#  )
 # 
 # graphs <- graphs %>%
 #   map(function(g) {
@@ -97,6 +96,13 @@ filtered_paths = path_table %>% filter(
   from %in% c("Artificial Lighting", "Habitat Loss", "Artificial Structures", "Noise", "Artificial Structures (Turbines and Substations)"),
   to %in% c("Reduced Survival", "Reduced Reproductive Success"))%>%
   arrange(-n_graphs)
+
+#add column for sorting
+colnames(filtered_paths)[1]<-"Pressure"
+colnames(filtered_paths)[2]<-"Individual Endpoint"
+
+filtered_paths = filtered_paths %>% mutate(path)
+
 
 # write_excel_csv(filtered_paths, "OSW Pathways.csv")
 
